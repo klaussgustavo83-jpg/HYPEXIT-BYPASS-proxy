@@ -7,6 +7,20 @@ from discord import app_commands
 
 CLEAN_INTERVAL = 60
 
+# ============================================
+#  ____            _           _  __  ____   __
+# |  _ \ _ __ ___ (_) ___  ___| |_\ \/ /\ \ / /
+# | |_) | '__/ _ \| |/ _ \/ __| __|\  /  \ V / 
+# |  __/| | | (_) | |  __/ (__| |_ /  \   | |  
+# |_|   |_|  \___// |\___|\___|\__/_/\_\  |_|  
+#               |__/                            
+#
+# Project  : Project XY Bypass
+# Version  : v1.0.0
+# Status   : Stable Release
+# Author   : Quantum
+# Discord  : https://discord.gg/nsXdFpE69b
+# ============================================
 
 def load_whitelist(path):
     try:
@@ -36,6 +50,22 @@ class WhitelistCog(app_commands.Group):
         e.set_thumbnail(url="https://cdn.discordapp.com/attachments/903069137422565406/1182390234879942746/neon_icon.gif")
         e.timestamp = discord.utils.utcnow()
         return e
+
+
+# ============================================
+#  ____            _           _  __  ____   __
+# |  _ \ _ __ ___ (_) ___  ___| |_\ \/ /\ \ / /
+# | |_) | '__/ _ \| |/ _ \/ __| __|\  /  \ V / 
+# |  __/| | | (_) | |  __/ (__| |_ /  \   | |  
+# |_|   |_|  \___// |\___|\___|\__/_/\_\  |_|  
+#               |__/                            
+#
+# Project  : Project XY Bypass
+# Version  : v1.0.0
+# Status   : Stable Release
+# Author   : Quantum
+# Discord  : https://discord.gg/nsXdFpE69b
+# ============================================
 
     @app_commands.command(name="add", description="Add user to whitelist")
     async def add(self, interaction: discord.Interaction, uid: str, hours: int):
@@ -111,7 +141,7 @@ async def start_bot(token, name, file_path):
 
 
 async def main(): 
-    token = "MTQ1NjMxMDMyNzU1MjYzODk4NQ.GrKryD.J26DZB_Tl5v0g1fHXK3yHLyKaU2j8Ur4CgPAgQ"
+    token = os.getenv("DISCORD_BOT_TOKEN", "SEU_TOKEN_AQUI")
 
 
     await asyncio.gather(     

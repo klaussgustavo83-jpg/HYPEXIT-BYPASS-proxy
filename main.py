@@ -1,70 +1,103 @@
-import subprocess
-import sys
 import os
-import signal
+import json
 import time
+import asyncio
+import discord
+from discord import app_commands
 
-def terminate_process(p):
+CLEAN_INTERVAL = 60
+
+def load_whitelist(path):
     try:
-        if p and p.poll() is None:
-            p.terminate()
-            try:
-                p.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                p.kill()
-    except Exception:
-        pass
+        with open(path, "r", encoding="utf-8") as f:
+            return {str(k): int(v) for k, v in json.load(f).items()}
+    except:
+        return {}
+
+def save_whitelist(wl, path):
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({str(k): int(v) for k, v in wl.items()}, f, separators=(",", ":"), ensure_ascii=False)
+    os.replace(tmp, path)
+
+class WhitelistCog(app_commands.Group):
+    def __init__(self, bot_name, file_path):
+        super().__init__(name="whitelist", description="Manage whitelist")
+        self.path = file_path
+        self.wl = load_whitelist(self.path)
+        self.bot_name = bot_name
+
+    async def sexy_embed(self, title, desc, color=0x9B59B6):
+        e = discord.Embed(title=f"✨ {title} ✨", description=desc, color=color)
+        e.set_footer(text=f"{self.bot_name} • Whitelist Manager ⚡")
+        e.timestamp = discord.utils.utcnow()
+        return e
+
+    @app_commands.command(name="add", description="Add user to whitelist")
+    async def add(self, interaction: discord.Interaction, uid: str, hours: int):
+        expire = int(time.time()) + hours * 3600
+        self.wl[str(uid)] = expire
+        save_whitelist(self.wl, self.path)
+        msg = f"🆔 **User ID:** `{uid}`\n⏳ **Expires:** <t:{expire}:F> (<t:{expire}:R>)"
+        await interaction.response.send_message(embed=await self.sexy_embed("✅ Added to Whitelist", msg, 0x2ECC71))
+
+    @app_commands.command(name="remove", description="Remove a user from whitelist")
+    async def remove(self, interaction: discord.Interaction, uid: str):
+        if str(uid) not in self.wl:
+            await interaction.response.send_message(embed=await self.sexy_embed("❔ Not Found", f"`{uid}` is not in whitelist.", 0xF1C40F))
+            return
+        del self.wl[str(uid)]
+        save_whitelist(self.wl, self.path)
+        await interaction.response.send_message(embed=await self.sexy_embed("🗑️ Removed", f"`{uid}` removed from whitelist.", 0xE67E22))
+
+    @app_commands.command(name="list", description="Show all whitelisted users")
+    async def list(self, interaction: discord.Interaction):
+        if not self.wl:
+            await interaction.response.send_message(embed=await self.sexy_embed("📜 Whitelist Empty", "Nobody is currently whitelisted.", 0x95A5A6))
+            return
+        lines = [f"💠 `{uid}` → <t:{ts}:R>" for uid, ts in sorted(self.wl.items(), key=lambda x: x[1])]
+        desc = "\n".join(lines)
+        await interaction.response.send_message(embed=await self.sexy_embed("👑 Whitelisted Users", desc, 0x1ABC9C))
+
+    @app_commands.command(name="check", description="Check if a user is whitelisted")
+    async def check(self, interaction: discord.Interaction, uid: str):
+        ts = self.wl.get(str(uid))
+        if not ts:
+            await interaction.response.send_message(embed=await self.sexy_embed("❌ Not Whitelisted", f"`{uid}` is **not** in whitelist.", 0xE74C3C))
+            return
+        if ts <= int(time.time()):
+            del self.wl[str(uid)]
+            save_whitelist(self.wl, self.path)
+            await interaction.response.send_message(embed=await self.sexy_embed("⌛ Expired", f"`{uid}` was expired and removed.", 0xE67E22))
+            return
+        await interaction.response.send_message(embed=await self.sexy_embed("✅ Active", f"`{uid}` is whitelisted until <t:{ts}:F>.", 0x2ECC71))
+
+async def cleaner_task(group):
+    while True:
+        now = int(time.time())
+        expired = [uid for uid, ts in list(group.wl.items()) if ts <= now]
+        for uid in expired:
+            del group.wl[uid]
+        if expired:
+            save_whitelist(group.wl, group.path)
+        await asyncio.sleep(CLEAN_INTERVAL)
+
+async def main():
+    token = os.getenv("DISCORD_BOT_TOKEN", "SEU_TOKEN_AQUI")
     
-def main():
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    addon_script = os.path.join(script_dir, "mitmproxyutils.py")
-    confdir = os.path.join(script_dir, "certs")
-    bot_script = os.path.join(script_dir, "bot.py")
+    intents = discord.Intents.default()
+    client = discord.Client(intents=intents)
+    tree = app_commands.CommandTree(client)
+    wl = WhitelistCog("💎 Bot Two", "whitelist_ind.json")
 
-    if not os.path.exists(addon_script):
-        print(f"Error: Addon script not found at {addon_script}")
-        sys.exit(1)
-    if not os.path.isdir(confdir):
-        print(f"Error: certs directory not found at {confdir}")
-        sys.exit(1)
-    if not os.path.exists(bot_script):
-        print(f"Error: Bot script not found at {bot_script}")
-        sys.exit(1)
+    @client.event
+    async def on_ready():
+        tree.add_command(wl)
+        await tree.sync()
+        client.loop.create_task(cleaner_task(wl))
+        print(f"💎 Bot logged in as {client.user} ({client.user.id})")
 
-    mitm_cmd = [
-        "./.local/bin/mitmdump",
-        "-s", addon_script,
-        "-p", "10591",
-        "--listen-host", "0.0.0.0",
-        "--set", "block_global=false",
-        "--set", f"confdir={confdir}"
-    ]
-
-    bot_cmd = [sys.executable, bot_script]
-
-    mitm_proc = None
-    bot_proc = None
-
-    try:
-        bot_proc = subprocess.Popen(bot_cmd)
-        mitm_proc = subprocess.Popen(mitm_cmd)
-        print(f"Started bot (pid={bot_proc.pid}) and mitmdump (pid={mitm_proc.pid})")
-        while True:
-            if mitm_proc.poll() is not None:
-                break
-            if bot_proc.poll() is not None:
-                break
-            time.sleep(0.5)
-    except KeyboardInterrupt:
-        print("\nReceived KeyboardInterrupt, shutting down...")
-    except FileNotFoundError as e:
-        print(f"Error: executable not found: {e}")
-    except Exception as e:
-        print(f"An error occurred: {e}")
-    finally:
-        terminate_process(mitm_proc)
-        terminate_process(bot_proc)
-        print("Shutdown complete")
+    await client.start(token)
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
